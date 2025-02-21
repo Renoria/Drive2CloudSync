@@ -46,12 +46,12 @@ SEVEN_DAYS = 7 * 24 * 60 * 60
 
 def movies(torrent, tmdb_info = None):
     if not torrent:
-        logger.warning(f"Skipping movies\??? since torrent object is empty")
+        logger.warning(f"Skipping movies/??? since torrent object is empty")
         return
     
     torrent_info = get_torrent_info(torrent["id"])
     if not torrent_info:
-        logger.warning(f"Skipping movies\{torrent['filename']} since Real-Debrid API returned without relevant torrent info")
+        logger.warning(f"Skipping movies/{torrent['filename']} since Real-Debrid API returned without relevant torrent info")
         return
     if torrent_info["status"] != "downloaded":
         return
@@ -74,7 +74,7 @@ def movies(torrent, tmdb_info = None):
                 [title, year] = get_movie_info_from_torrent_name(torrent['filename'])
                 tmdb_info = movie_scraper.search(title, year)
                 if len(tmdb_info) == 0:
-                    logger.warning(f"Skipping movies\{torrent['filename']} since TMDB returned 0 results")
+                    logger.warning(f"Skipping movies/{torrent['filename']} since TMDB returned 0 results")
                     return
                 else:
                     max_similarity_ratio = 0
@@ -136,12 +136,12 @@ def movies(torrent, tmdb_info = None):
 
 def shows(torrent, tmdb_info = None):
     if not torrent:
-        logger.warning(f"Skipping shows\??? since torrent object is empty")
+        logger.warning(f"Skipping shows/??? since torrent object is empty")
         return
     
     torrent_info = get_torrent_info(torrent["id"])
     if not torrent_info:
-        logger.warning(f"Skipping shows\{torrent['filename']} since Real-Debrid API returned without relevant torrent info")
+        logger.warning(f"Skipping shows/{torrent['filename']} since Real-Debrid API returned without relevant torrent info")
         return
     if torrent_info["status"] != "downloaded":
         return
@@ -164,7 +164,7 @@ def shows(torrent, tmdb_info = None):
             if not cache_record:
                 tmdb_info = search_show(title, year)
                 if len(tmdb_info) == 0:
-                    logger.warning(f"Skipping shows\{torrent['filename']} since TMDB returned 0 results")
+                    logger.warning(f"Skipping shows/{torrent['filename']} since TMDB returned 0 results")
                     return
                 else:
                     max_similarity_ratio = 0
@@ -273,7 +273,7 @@ def unknown(torrent = None):
             cache.update_torrent_id(torrent["id"], old_torrent_id=_tmp)
             cache_record = cache.fetch(torrent["id"])
         else:
-            logger.warning(f"Skipping default\{torrent['filename']} since its an unknown entity")
+            logger.warning(f"Skipping default/{torrent['filename']} since its an unknown entity")
             return
     if cache_record.type == "movie":
         return movies(torrent)
@@ -369,7 +369,7 @@ def try_folder_resolution(type, torrent):
     except Exception as ex:
         ex_string = error_string(ex)
         ex_string = ex_string.replace("\n", "\n\t")
-        logger.error(f"{type}\{torrent['filename']} could not be resolved\n\tDetails: {ex_string}")
+        logger.error(f"{type}/{torrent['filename']} could not be resolved\n\tDetails: {ex_string}")
 
 def manage_corrections(corrections: list[Correction]):
     global CORRECTIONS_FILE_LOCATION
@@ -458,7 +458,7 @@ if __name__ == "__main__":
 
         if seconds_passed > RESET_COUNTER:
             downloads = sort_downloads(get_downloads(), {})
-            torrents = sort_torrents(get_torrents(), downloads, torrents)
+            torrents = sort_torrents(get_torrents(), downloads)
             for hash in torrents:
                 try_folder_resolution(torrents[hash]["type"], torrents[hash])
 
