@@ -306,8 +306,8 @@ def is_expired(json_date):
         # Parse the JSON-formatted date string into a datetime object
         date_obj = dt_parser.parse(json_date)
         
-        # Get the current datetime
-        current_datetime = datetime.datetime.utcnow()
+        # Get the current datetime using the new recommended UTC approach
+        current_datetime = datetime.datetime.now(datetime.UTC)
         
         # Compare the parsed date with the current datetime
         return date_obj.timestamp() + SEVEN_DAYS < current_datetime.timestamp()
