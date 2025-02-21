@@ -16,25 +16,34 @@ import logging
 import traceback
 from thefuzz import fuzz
 import argparse
+from tqdm import tqdm
 
 
 # --- LOGGING SETUP START --- #
 
-# logging.basicConfig(level=logging.INFO, file='status.log')
+# Create console handler for terminal output
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+console_handler.setFormatter(console_formatter)
 
 # Gets or creates a logger
 logger = logging.getLogger(__name__)  
-
-# set log level
 logger.setLevel(logging.INFO)
 
 # define file handler and set formatter
 file_handler = logging.FileHandler('status.log', "a+", "utf-8")
-formatter    = logging.Formatter(u'%(asctime)s : %(levelname)s : %(name)s : %(message)s')
+formatter = logging.Formatter(u'%(asctime)s : %(levelname)s : %(name)s : %(message)s')
 file_handler.setFormatter(formatter)
 
-# add file handler to logger
+# add handlers to logger
 logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Create a separate logger for console-only messages
+console_logger = logging.getLogger('console')
+console_logger.setLevel(logging.INFO)
+console_logger.addHandler(console_handler)
 
 # --- LOGGING SETUP END --- #
 
@@ -355,21 +364,33 @@ def error_string(ex: Exception) -> str:
         ''.join(traceback.format_exception(None, ex, ex.__traceback__)).strip()
     ])
     
-def try_folder_resolution(type, torrent):
+def try_folder_resolution(type, torrent, progress_bar=None):
     if not torrent:
         logger.error("Empty torrent data. Check internet connection or RD API key.")
         return
     try:
+        if progress_bar:
+            progress_bar.set_description(f"Processing {type}: {torrent['filename'][:50]}...")
+        else:
+            console_logger.info(f"Processing {type}: {torrent['filename']}")
+        
         if type == 'movie':
             movies(torrent)
         elif type == 'tv':
             shows(torrent)
         else:
             unknown(torrent)
+            
+        if progress_bar:
+            progress_bar.update(1)
+            
     except Exception as ex:
         ex_string = error_string(ex)
         ex_string = ex_string.replace("\n", "\n\t")
         logger.error(f"{type}/{torrent['filename']} could not be resolved\n\tDetails: {ex_string}")
+        console_logger.error(f"Failed to process: {torrent['filename']}")
+        if progress_bar:
+            progress_bar.update(1)
 
 def manage_corrections(corrections: list[Correction]):
     global CORRECTIONS_FILE_LOCATION
@@ -415,52 +436,72 @@ if __name__ == "__main__":
                     version='Debrid Media Organizer 2.0.4', help="Show program's version number and exit.")
     args = parser.parse_args()
 
+    console_logger.info("Starting Debrid Media Organizer v2.0.4")
+    
     downloads = sort_downloads(get_downloads())
     torrents = sort_torrents(get_torrents(), downloads)
 
     corrections: list[Correction] = []
     corrections = manage_corrections(corrections)
-    for correction in corrections:
-        torrents[correction.hash]["type"] = correction.type
-        if not cache.fix_entry(correction):
-            try:
-                cache.save(torrents[correction.hash]["id"], correction.type, correction.tmdb_id, torrents[correction.hash]['filename'], correction.hash)
-            except:
-                continue
-        try_folder_resolution(correction.type, torrents[correction.hash])
-        correction.done = True
-    corrections = manage_corrections(corrections)
+    if len(corrections) > 0:
+        console_logger.info(f"Processing {len(corrections)} corrections...")
+        with tqdm(total=len(corrections), desc="Applying corrections") as pbar:
+            for correction in corrections:
+                torrents[correction.hash]["type"] = correction.type
+                if not cache.fix_entry(correction):
+                    try:
+                        cache.save(torrents[correction.hash]["id"], correction.type, correction.tmdb_id, torrents[correction.hash]['filename'], correction.hash)
+                    except:
+                        pbar.update(1)
+                        continue
+                try_folder_resolution(correction.type, torrents[correction.hash], pbar)
+                correction.done = True
+            corrections = manage_corrections(corrections)
 
     if args.run_corrections:
         exit()
     
     if not args.skip_media_reset:
-        for hash in torrents:
-            try_folder_resolution(torrents[hash]["type"], torrents[hash])
+        total_items = len(torrents)
+        if total_items > 0:
+            console_logger.info(f"Processing {total_items} existing items...")
+            with tqdm(total=total_items, desc="Processing library") as pbar:
+                for hash in torrents:
+                    try_folder_resolution(torrents[hash]["type"], torrents[hash], pbar)
+        
         if args.keep_running:
+            console_logger.info("Running in service mode - checking for new content every %d minutes", FOLDER_CHECK_FREQUENCY/60)
             sleep(5 * 60)
             seconds_passed = 5 * 60
 
     while args.keep_running:
-
         corrections: list[Correction] = []
         corrections = manage_corrections(corrections)
-        for correction in corrections:
-            torrents[correction.hash]["type"] = correction.type
-            if not cache.fix_entry(correction):
-                try:
-                    cache.save(torrents[correction.hash]["id"], correction.type, correction.tmdb_id, torrents[correction.hash]['filename'], correction.hash)
-                except:
-                    continue
-            try_folder_resolution(correction.type, torrents[correction.hash])
-            correction.done = True
-        corrections = manage_corrections(corrections)
+        if len(corrections) > 0:
+            console_logger.info(f"Processing {len(corrections)} corrections...")
+            with tqdm(total=len(corrections), desc="Applying corrections") as pbar:
+                for correction in corrections:
+                    torrents[correction.hash]["type"] = correction.type
+                    if not cache.fix_entry(correction):
+                        try:
+                            cache.save(torrents[correction.hash]["id"], correction.type, correction.tmdb_id, torrents[correction.hash]['filename'], correction.hash)
+                        except:
+                            pbar.update(1)
+                            continue
+                    try_folder_resolution(correction.type, torrents[correction.hash], pbar)
+                    correction.done = True
+                corrections = manage_corrections(corrections)
 
         if seconds_passed > RESET_COUNTER:
+            console_logger.info("Performing periodic full library reset...")
             downloads = sort_downloads(get_downloads(), {})
             torrents = sort_torrents(get_torrents(), downloads)
-            for hash in torrents:
-                try_folder_resolution(torrents[hash]["type"], torrents[hash])
+            
+            total_items = len(torrents)
+            if total_items > 0:
+                with tqdm(total=total_items, desc="Resetting library") as pbar:
+                    for hash in torrents:
+                        try_folder_resolution(torrents[hash]["type"], torrents[hash], pbar)
 
             seconds_passed = 0
         else:
@@ -474,9 +515,14 @@ if __name__ == "__main__":
             new_torrents = [torrent for torrent in new_torrents if torrent["id"] not in old_torrents or torrent["hash"] not in torrents or torrents[torrent["hash"]]["id"] != torrent["id"]]
             new_torrents = new_torrents + [torrents[hash] for hash in torrents if any([link not in downloads for link in torrents[hash]["links"]])]
             new_torrents = sort_torrents(new_torrents, downloads, {})
-            for hash in new_torrents:
-                try_folder_resolution(new_torrents[hash]["type"], new_torrents[hash])
-            torrents = {**torrents, **new_torrents}
+            
+            new_count = len(new_torrents)
+            if new_count > 0:
+                console_logger.info(f"Processing {new_count} new items...")
+                with tqdm(total=new_count, desc="Processing new content") as pbar:
+                    for hash in new_torrents:
+                        try_folder_resolution(new_torrents[hash]["type"], new_torrents[hash], pbar)
+                torrents = {**torrents, **new_torrents}
         
         sleep(FOLDER_CHECK_FREQUENCY)
         seconds_passed = seconds_passed + FOLDER_CHECK_FREQUENCY
