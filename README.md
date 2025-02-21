@@ -30,7 +30,7 @@ Debrid Media Organizer offers several features to enhance your media organizatio
 Before you can use Debrid Media Organizer, you'll need to install Python (version >3.10) and ensure you have the necessary dependencies. Follow these steps to get started:
 1. Clone this repository to your local machine:
     ```sh
-    git clone https://github.com/honest-mule/Drive2CloudSync.git
+    git clone https://github.com/Renoria/Drive2CloudSync
     ```
 2. Navigate to the project directory:
     ```sh
